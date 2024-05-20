@@ -1,0 +1,13 @@
+{
+    "models": {
+        "gpt-3": "gpt-3.5-turbo-0125",
+        "gpt-4": "gpt-4o"
+    },
+    "prompts": {
+        "system": "you are a beta reader who will provide feedback and information on literary material",
+        "summarize_chunk": "you will be provided a short excerpt from a work of literature. summarize the contents of the passage in great detail.",
+        "summarize_story": "you will be provided a collection of summaries from excerpts of a work of literature. combine these summaries into a cohesive review of the entire narrative, capturing all relevant details with regards to style, plot, and themes.",
+        "answer_no_context": "you will be provided a collection of summaries of a work of literature. you will draw upon this document to answer the question which follows them.",
+        "answer_given_context": "you will be provided several documents. the first is a collection of summaries of a work of literature, followed by several raw excerpts from the work. you will draw upon these documents to answer the question which follows them. when answering, cite directly from the excerpts to support your claims."
+    }
+}

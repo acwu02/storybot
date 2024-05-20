@@ -1,0 +1,8 @@
+openai
+pypdf
+chromadb
+transformers
+scikit-learn
+numpy
+torch
+tinydb
