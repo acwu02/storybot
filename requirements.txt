@@ -1,8 +1,9 @@
 openai
-pypdf
+pymupdf
 chromadb
-transformers
-scikit-learn
 numpy
-torch
 tinydb
+tqdm
+transformers
+torch
+scikit-learn

@@ -2,9 +2,9 @@ from openai import OpenAI
 from tinydb import TinyDB, Query
 from fileparser import FileParser
 from embeddings import Embeddings
-from request import Request
 import json
 import os
+import sys
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -12,7 +12,8 @@ parser.add_argument('-e', '--embed', action='store_true')
 parser.add_argument('-m', '--message', action='store_true')
 parser.add_argument('-q', '--query', action='store_true')
 parser.add_argument('-c', '--cosines', action='store_true')
-args = parser.parse_args()
+parser.add_argument('--debug_ner', action='store_true')
+args, unknown_args = parser.parse_known_args()
 
 client = OpenAI()
 
@@ -43,7 +44,7 @@ assert answer_no_context
 assert gpt3
 assert gpt4
 
-filename = "PART_1_long"
+filename = "PART_1_AND_2"
 
 class API():
     def __init__(
@@ -56,7 +57,8 @@ class API():
         chunk_size,
         overlap,
         temperature,
-        k
+        k,
+        gamma
     ):
         self.summary = ""
         self.file_path = file_path
@@ -64,39 +66,32 @@ class API():
         self.summaries_path = summaries_path
         self.embed_path = embed_path
         self.db_path = db_path
+        self.gamma = gamma
         self.chunks = dict()
         self.story_name = self.file_path[:self.file_path.find('.pdf')]
-        self.fileparser = FileParser(file_path, chunk_size, overlap)
-        self.embeddings = Embeddings(self.story_name, self.embed_path)
+        self.embeddings = Embeddings(self.story_name, self.embed_path, self.gamma)
+        self.fileparser = FileParser(file_path, chunk_size, overlap, self.embeddings, None, None) # TODO fill in missing args
         self.db = TinyDB(self.db_path)
         self.temperature = temperature
         self.k = k
 
-    def request(self, model, requests):
+    def request(self, model, role, message):
+        request = self.message_to_request(role, message)
         completion = client.chat.completions.create(
             model=model,
-            messages=[requests],
+            messages=[request],
             temperature=self.temperature
         )
         response = completion.choices[0].message.content
         return response
 
+
+    def message_to_request(self, role, message):
+        return {"role": role, "content": message}
+
+    # TODO figure out how much context wanted
     def update_db(self, response):
         self.db.insert({"role": "assistant", "content": response})
-
-    # run to set model state
-    # TODO eliminate these functions
-    def system_request(self, model, system_message):
-        request = Request("system", system_message)
-        response = self.request(model, request.get_body())
-        self.update_db(response)
-        return response
-
-    def user_request(self, model, message):
-        request = Request("system", message)
-        response = self.request(model, request.get_body())
-        self.update_db(response)
-        return response
 
     def chunk(self):
         chunks = self.fileparser.parse_file()
@@ -108,8 +103,11 @@ class API():
          self.embeddings.embed_chunks(self.chunks)
 
     def get_responses(self):
-        responses = [self.user_request(gpt3, summarize_chunk + chunk)
-                    for i, chunk in self.chunks.items()]
+        responses = [self.request(
+            gpt3,
+            "system",
+            summarize_chunk + chunk
+        ) for i, chunk in self.chunks.items()]
         self.responses = dict([(i, response)
                     for i, response in enumerate(responses)])
         with open(self.summaries_path, 'w') as f:
@@ -141,11 +139,13 @@ class API():
 
     def send_message(self, message):
         summary = self.read_summary()
-        k_closest_chunks, _ = self.embeddings.query_chunks([message], self.k)
-        response = self.user_request(
+        k_closest_chunks, scores = self.embeddings.query_chunks([message], self.k)
+        self.print_query_chunks(k_closest_chunks, scores)
+        response = self.request(
             gpt4,
+            "system",
             "SUMMARY: " + summary +
-            "EXCERPTS: " + " ".join(k_closest_chunks) +
+            # "EXCERPTS: " + " ".join(k_closest_chunks) +
             "QUESTION: " + message
         )
         print(response)
@@ -181,26 +181,33 @@ if __name__ == '__main__':
         f"{filename}_summaries.txt",
         f"{filename}_embeddings",
         f"{filename}_db.json",
-        4000, 400, 0.7, 4
+        2000, 200, 0.7, 5, 0.0001
     )
 
     api.fileparser.parse_file()
 
+    if args.debug_ner:
+        api.embeddings.test_ner()
+
     if args.message:
         message = input("Enter message: ")
-        api.system_request(gpt4, system_prompt)
         api.send_message(message)
     elif args.query:
         query = input("Enter query: ")
         api.query(query)
     elif args.cosines:
-        cosine_sims = api.embeddings.get_cosine_sim()
+        cosine_sims = api.embeddings.get_cosine_sims()
         with open('cosine_sims.txt', 'w') as f:
             for row in cosine_sims:
                 f.write(' '.join(map(str, row)) + '\n')
+                f.write(str(row) + '\n')
     elif args.embed:
         api.chunk()
     else:
-        api.system_request(gpt4, system_prompt)
-        api.chunk()
-        api.get_responses()
+        if sys.argv[1]:
+            query =  " ".join(sys.argv[1:])
+            print(query)
+            api.query(query)
+        else:
+            api.chunk()
+            api.get_responses()
