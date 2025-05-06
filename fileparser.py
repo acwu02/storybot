@@ -1,4 +1,3 @@
-from transformers import BertModel, BertTokenizer
 from embeddings import Embeddings
 from tqdm import tqdm
 
@@ -33,7 +32,7 @@ class FileParser():
             content += page.get_text()
         return content
 
-    def parse_file(self):
+    def chunk_fixed_size(self):
         assert self.chunk_size > self.overlap, "chunk size cannot be less than or equal to overlap"
         chunks = []
         text = self.load_file()
@@ -60,6 +59,7 @@ class FileParser():
 
     # TODO introduce window of previous cosine sims
     # TODO merge subchunks of len 1 w/ closest neighboring subchunk
+    # TODO penalize smaller chunks
     def semantic_chunking_greedy(self):
         text = self.load_file()
         chunks = self.chunk_by_partition(text)
@@ -92,31 +92,24 @@ class FileParser():
         return self.chunks
 
     def semantic_chunking_recursive_helper(self, chunk, cosine_sims, subchunks, start_idx):
-        assert len(cosine_sims) == len(chunk) - 1 or len(cosine_sims) == 0 and len(chunk) == 0, f"cosine_sims length: {len(cosine_sims)}, chunk length: {len(chunk)}"
-        print("COSINE SIMS:")
-        print(cosine_sims)
-        print("START INDEX:")
-        print(start_idx)
+
         if len(chunk) <= self.min_chunk_len or not cosine_sims:
             subchunks.append(chunk)
             return
-        else:
-            min_cosine_sim, min_idx = min(cosine_sims)
-            if min_cosine_sim < self.threshold:
-                min_idx -= (start_idx + 1)
-                L = chunk[:min_idx]
-                R = chunk[min_idx:]
-                print("LEFT CHUNK:")
-                print(L)
-                print("RIGHT CHUNK:")
-                print(R)
-                print("MIN_INDEX:")
-                print(min_idx)
-                print(['-' for _ in range(50)])
-                self.semantic_chunking_recursive_helper(L, cosine_sims[:min_idx - 1], subchunks, 0)
-                self.semantic_chunking_recursive_helper(R, cosine_sims[min_idx - 1:], subchunks, min_idx)
+
+        min_cosine_sim, min_idx = min(cosine_sims)
+        if min_cosine_sim < self.threshold:
+            min_idx = min_idx - start_idx
+            L = chunk[:min_idx]
+            R = chunk[min_idx:]
+
+            if L and R:
+                self.semantic_chunking_recursive_helper(L, cosine_sims[:min_idx], subchunks, 0)
+                self.semantic_chunking_recursive_helper(R, cosine_sims[min_idx:], subchunks, start_idx + min_idx + 1)
             else:
                 subchunks.append(chunk)
+        else:
+            subchunks.append(chunk)
 
     # for debugging
     def cosine_sim_test(self):
@@ -142,10 +135,20 @@ class FileParser():
             print('\n')
             print(chunk)
 
+# Example usage
 if __name__ == '__main__':
     embeddings = Embeddings("PART_1_long", "PART_1_long_embed", 0.1)
     fileparser = FileParser("PART_1_long.pdf", 4000, 400, embeddings, 0.8, 50)
-    fileparser.cosine_sim_test()
 
-    # chunks = fileparser.semantic_chunking_recursive()
-    # fileparser.print_chunks()
+    chunks = fileparser.chunk_fixed_size()
+
+    print(chunks)
+
+    # Write chunks to file
+    with open("chunks.txt", "w") as f:
+        for i, chunk in enumerate(chunks):
+            f.write(f"CHUNK {i}:\n")
+            f.write(''.join(chunk))
+            f.write("\n\n")
+
+

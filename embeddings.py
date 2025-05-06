@@ -16,14 +16,14 @@ class Embeddings():
     def __init__(self, story_name, embed_path, gamma):
         self.story_name = story_name
         self.embed_path = embed_path
-        self.client = OpenAI()
+        self.openai_client = OpenAI()
         self.embeds = {}
         self.openai_ef = embedding_functions.OpenAIEmbeddingFunction(
             api_key=os.getenv("OPENAI_API_KEY"),
             model_name="text-embedding-3-small"
         )
-        self.chroma = chromadb.PersistentClient(path=self.embed_path)
-        self.collection = self.chroma.get_or_create_collection(
+        self.chroma_client = chromadb.PersistentClient(path=self.embed_path)
+        self.collection = self.chroma_client.get_or_create_collection(
             name=f"{self.story_name}_embeds",
             embedding_function=self.openai_ef
         )
@@ -123,14 +123,14 @@ class Embeddings():
         q_n = q / np.linalg.norm(q)
         E_n = E / np.linalg.norm(E, axis=1, keepdims=True)
         s = np.dot(E_n, q_n)
-        # if w is not None:
-        #     s = np.ravel(s + w)
+        if w is not None:
+            s = np.ravel(s + w)
         top_k = np.argpartition(s, -k)[-k:]
         top_k = top_k[np.argsort(-s[top_k])]
         return top_k, s[top_k]
 
     def embed_query(self, query):
-        response = self.client.embeddings.create(
+        response = self.openai_client.embeddings.create(
             input=query,
             model="text-embedding-3-small"
         )
@@ -168,6 +168,9 @@ class Embeddings():
 
     def get_all_embeddings(self):
         return np.array(self.query_all()['embeddings'])
+
+    def reset(self):
+        self.chroma_client.delete_collection(name=f"{self.story_name}_embeds")
 
 if __name__ == '__main__':
     embeddings = Embeddings("PART_1_long", "PART_1_long_embed", None)

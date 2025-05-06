@@ -6,13 +6,14 @@ import json
 import os
 import sys
 import argparse
+import pyfiglet
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-e', '--embed', action='store_true')
+parser.add_argument('-c', '--chunk', action='store_true')
 parser.add_argument('-m', '--message', action='store_true')
 parser.add_argument('-q', '--query', action='store_true')
-parser.add_argument('-c', '--cosines', action='store_true')
-parser.add_argument('--debug_ner', action='store_true')
+parser.add_argument('-s', '--summarize', action='store_true')
+parser.add_argument('-r', '--reset-chromadb', action='store_true')
 args, unknown_args = parser.parse_known_args()
 
 client = OpenAI()
@@ -26,6 +27,11 @@ answer_no_context = ''
 gpt3 = ''
 gpt4 = ''
 
+chunk_size = None
+temperature = None
+k = None
+gamma = None
+
 with open(config_path, 'r') as file:
     config = json.load(file)
     system_prompt = config['prompts']['system']
@@ -33,6 +39,11 @@ with open(config_path, 'r') as file:
     summarize_story = config['prompts']['summarize_story']
     answer_given_context = config['prompts']['answer_given_context']
     answer_no_context = config['prompts']['answer_no_context']
+    chunk_size = config['params']['chunk_size']
+    overlap = config['params']['overlap']
+    temperature = config['params']['temperature']
+    k = config['params']['num_chunks']
+    gamma = config['params']['distance_weight']
     gpt3 = config['models']['gpt-3']
     gpt4 = config['models']['gpt-4']
 
@@ -41,19 +52,19 @@ assert summarize_chunk
 assert summarize_story
 assert answer_given_context
 assert answer_no_context
+assert chunk_size
+assert overlap
+assert temperature
+assert k
+assert gamma
 assert gpt3
 assert gpt4
 
-filename = "PART_1_AND_2"
 
 class API():
     def __init__(
         self,
         file_path,
-        chunk_path,
-        summaries_path,
-        embed_path,
-        db_path,
         chunk_size,
         overlap,
         temperature,
@@ -62,15 +73,19 @@ class API():
     ):
         self.summary = ""
         self.file_path = file_path
-        self.chunk_path = chunk_path
-        self.summaries_path = summaries_path
-        self.embed_path = embed_path
-        self.db_path = db_path
+        self.filename = self.file_path[:self.file_path.find('.pdf')]
+        self.chunk_path = f"{self.filename}_chunks.txt"
+        self.summaries_path = f"{self.filename}_summaries.txt"
+        self.embed_path = f"{self.filename}_embeddings"
+        self.db_path = f"{self.filename}_db.json"
+
         self.gamma = gamma
         self.chunks = dict()
-        self.story_name = self.file_path[:self.file_path.find('.pdf')]
-        self.embeddings = Embeddings(self.story_name, self.embed_path, self.gamma)
-        self.fileparser = FileParser(file_path, chunk_size, overlap, self.embeddings, None, None) # TODO fill in missing args
+
+        self.embeddings = Embeddings(
+            self.filename, self.embed_path, gamma=self.gamma)
+        self.fileparser = FileParser(file_path, chunk_size=chunk_size, overlap=overlap,
+                                     embeddings=self.embeddings, threshold=None, min_chunk_len=None)
         self.db = TinyDB(self.db_path)
         self.temperature = temperature
         self.k = k
@@ -85,7 +100,6 @@ class API():
         response = completion.choices[0].message.content
         return response
 
-
     def message_to_request(self, role, message):
         return {"role": role, "content": message}
 
@@ -94,22 +108,22 @@ class API():
         self.db.insert({"role": "assistant", "content": response})
 
     def chunk(self):
-        chunks = self.fileparser.parse_file()
+        chunks = self.fileparser.chunk_fixed_size()
         self.chunks = dict([(i, chunk) for i, chunk in enumerate(chunks)])
         self.embed()
         self.write_chunks()
 
     def embed(self):
-         self.embeddings.embed_chunks(self.chunks)
+        self.embeddings.embed_chunks(self.chunks)
 
-    def get_responses(self):
+    def summarize(self):
         responses = [self.request(
             gpt3,
             "system",
             summarize_chunk + chunk
-        ) for i, chunk in self.chunks.items()]
+        ) for _, chunk in self.chunks.items()]
         self.responses = dict([(i, response)
-                    for i, response in enumerate(responses)])
+                               for i, response in enumerate(responses)])
         with open(self.summaries_path, 'w') as f:
             for i, response in self.responses.items():
                 f.write(response)
@@ -119,9 +133,7 @@ class API():
     def write_chunks(self):
         with open(self.chunk_path, 'w') as f:
             for i, chunk in self.chunks.items():
-                f.write(f"CHUNK {i}")
-                f.write(chunk)
-                f.write('\n')
+                f.write(f"CHUNK {i}:\n\n{chunk}\n\n")
 
     def query(self, query):
         chunks, scores = self.embeddings.query_chunks([query], self.k)
@@ -139,55 +151,34 @@ class API():
 
     def send_message(self, message):
         summary = self.read_summary()
-        k_closest_chunks, scores = self.embeddings.query_chunks([message], self.k)
-        self.print_query_chunks(k_closest_chunks, scores)
+        k_closest_chunks, _ = self.embeddings.query_chunks(
+            [message], self.k)
         response = self.request(
             gpt4,
             "system",
             "SUMMARY: " + summary +
-            # "EXCERPTS: " + " ".join(k_closest_chunks) +
+            "EXCERPTS: " + " ".join(k_closest_chunks) +
             "QUESTION: " + message
         )
         print(response)
 
-    def print_query_chunks(self, chunks, scores):
-        for i, doc in enumerate(chunks):
-            print(f"DOC {i}")
-            print(f"SCORE: {scores[i]}")
-            for j in range(50):
-                print("-", end='')
-            print('\n' + doc + '\n')
-
-    def print_chunks(self):
-        for i, chunk in self.chunks.items():
-            print("CHUNK" + str(i) + ":")
-            for i in range(50):
-                print("-", end='')
-            print('\n')
-            print(chunk)
-
-    def print_responses(self):
-        for i, response in self.responses.items():
-            print("RESPONSE" + str(i) + ":")
-            for i in range(50):
-                print("-", end='')
-            print('\n')
-            print(response)
-
 if __name__ == '__main__':
+
+    print(pyfiglet.figlet_format("StoryBot", font="slant"))
+    print("Welcome to StoryBot! \n")
+    print("This is a tool for chunking, embedding, and querying text files. \n")
+    print("It uses OpenAI's GPT models for text processing. \n")
+    print("To get started, remember to set up your OpenAI API key in .env. \n")
+    print("Also, make sure to have configured your config.json file with the correct prompts and model names. \n")
+
+    filename = input("Enter the path to the file to process: ")
+
     api = API(
-        f"{filename}.pdf",
-        f"{filename}_chunks.txt",
-        f"{filename}_summaries.txt",
-        f"{filename}_embeddings",
-        f"{filename}_db.json",
-        2000, 200, 0.7, 5, 0.0001
+        filename, chunk_size, overlap, temperature, k, gamma
     )
 
-    api.fileparser.parse_file()
-
-    if args.debug_ner:
-        api.embeddings.test_ner()
+    print("API initialized.")
+    print("File path: " + api.file_path)
 
     if args.message:
         message = input("Enter message: ")
@@ -195,19 +186,12 @@ if __name__ == '__main__':
     elif args.query:
         query = input("Enter query: ")
         api.query(query)
-    elif args.cosines:
-        cosine_sims = api.embeddings.get_cosine_sims()
-        with open('cosine_sims.txt', 'w') as f:
-            for row in cosine_sims:
-                f.write(' '.join(map(str, row)) + '\n')
-                f.write(str(row) + '\n')
-    elif args.embed:
+    elif args.summarize:
+        api.summarize()
+        print("Summaries written to " + api.summaries_path)
+    elif args.reset_chromadb:
+        api.embeddings.reset()
+        print("Chromadb reset")
+    elif args.chunk:
         api.chunk()
-    else:
-        if sys.argv[1]:
-            query =  " ".join(sys.argv[1:])
-            print(query)
-            api.query(query)
-        else:
-            api.chunk()
-            api.get_responses()
+        print("Chunking complete. Written to " + api.chunk_path)

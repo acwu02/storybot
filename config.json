@@ -3,6 +3,14 @@
         "gpt-3": "gpt-3.5-turbo-0125",
         "gpt-4": "gpt-4o"
     },
+    "params": {
+        "temperature": 0.7,
+        "max_tokens": 2000,
+        "chunk_size": 1000,
+        "overlap": 20,
+        "num_chunks": 5,
+        "distance_weight": 0.001
+    },
     "prompts": {
         "system": "you are a beta reader who will provide feedback and information on literary material",
         "summarize_chunk": "you will be provided a short excerpt from a work of literature. summarize the contents of the passage in great detail.",
