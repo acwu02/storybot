@@ -73,11 +73,11 @@ class API():
     ):
         self.summary = ""
         self.file_path = file_path
-        self.filename = self.file_path[:self.file_path.find('.pdf')]
-        self.chunk_path = f"{self.filename}_chunks.txt"
-        self.summaries_path = f"{self.filename}_summaries.txt"
-        self.embed_path = f"{self.filename}_embeddings"
-        self.db_path = f"{self.filename}_db.json"
+        self.filename = os.path.splitext(os.path.basename(self.file_path))[0]
+        self.chunk_path = f"./outputs/{self.filename}_chunks.txt"
+        self.summaries_path = f"./outputs/{self.filename}_summaries.txt"
+        self.embed_path = f"./chromadb_outputs/{self.filename}_embeddings"
+        self.db_path = f"./chromadb_outputs/{self.filename}_db.json"
 
         self.gamma = gamma
         self.chunks = dict()
@@ -116,7 +116,17 @@ class API():
     def embed(self):
         self.embeddings.embed_chunks(self.chunks)
 
+    def get_chunks_from_file(self):
+        if os.path.exists(self.chunk_path):
+            with open(self.chunk_path, 'r') as f:
+                lines = ''.join(f.readlines()).split('CHUNK')
+                for i, line in enumerate(lines):
+                    if line:
+                        line = line.split(':')[1].strip()
+                        self.chunks[i] = line
+
     def summarize(self):
+        self.get_chunks_from_file()
         responses = [self.request(
             gpt3,
             "system",
@@ -163,6 +173,10 @@ class API():
         print(response)
 
 if __name__ == '__main__':
+
+    if not args.chunk and not args.message and not args.query and not args.summarize and not args.reset_chromadb:
+        print("No arguments provided. Please use -h for help.")
+        sys.exit(1)
 
     print(pyfiglet.figlet_format("StoryBot", font="slant"))
     print("Welcome to StoryBot! \n")
