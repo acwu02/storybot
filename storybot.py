@@ -180,7 +180,7 @@ if __name__ == '__main__':
 
     print(pyfiglet.figlet_format("StoryBot", font="slant"))
     print("Welcome to StoryBot! \n")
-    print("This is a tool for chunking, embedding, and querying text files. \n")
+    print("This is a tool for chunking, embedding, and querying text files, specifically longer-form stories. \n")
     print("It uses OpenAI's GPT models for text processing. \n")
     print("To get started, remember to set up your OpenAI API key in .env. \n")
     print("Also, make sure to have configured your config.json file with the correct prompts and model names. \n")
