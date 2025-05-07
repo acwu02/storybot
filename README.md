@@ -8,6 +8,12 @@ Note: You need a working OpenAI API key to use Storybot.
 
 ## Setup
 
+Clone the repo:
+
+```
+git clone https://github.com/acwu02/storybot.git
+```
+
 From the root directory, run:
 
 ```
