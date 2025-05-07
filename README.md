@@ -52,5 +52,5 @@ python3 storybot.py -m
 
 ## Design
 
-Storybot performs document retrieval as follows. Let $q$ be the embedding of a given query and $\mt{D} = $
+Storybot performs document retrieval as follows. Let $q$ be the embedding of a given query and $\mathcal{D} = $
 ``
