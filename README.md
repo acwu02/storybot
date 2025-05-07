@@ -26,8 +26,6 @@ Open it with your favorite text editor, retrieve your OpenAI API key, and define
 OPENAI_API_KEY=[insert API key here]
 ```
 
-You're all set!
-
 ## Workflow
 
 First, upload a story to be parsed in either .txt or .pdf form to the root directory. 
@@ -52,5 +50,38 @@ python3 storybot.py -m
 
 ## Design
 
-Storybot performs document retrieval as follows. Let $q$ be the embedding of a given query and $\mathcal{C} = \{ c_1, c_2, ..., c_n \}$
-``
+### Chunking
+
+Storybot provides four chunking heuristics:
+
+- Fixed-size
+- By arbitrary delimiters
+- Semantic w/ BERT (greedy): immediately separates if cosine similarity between adjacent sentences falls below a given threshold
+- Semantic w/ BERT (recursive): uses a divide-and-conquer strategy to split based on lowest adjacent sentence similarities
+
+### Retrieval
+
+Storybot performs document retrieval as follows. Let $q$ be the embedding of a given query and $\{ c_1, c_2, ..., c_n \}$ be the embeddings of given chunks. We calculate similarity between $q$ and $c_i$ as follows:
+
+$$
+\text{sim}(q, c_i) = \text{cos}(q, c_i) + w_i
+$$
+
+where:
+
+$$w_i = D\[i, j^* \]
+$$
+
+$D$ is a symmetric distance matrix which applies a Gaussian decay penalty based on the index distance between chunks $i$ and $j$:
+
+$$
+D\[i, j\] = \text{exp}(-\gamma(i - j)^2)
+$$
+
+Specifically, we find the index distance between $c_i$ and $c_{j^*} $, where 
+
+$$
+j^* = \text{argmax}_j \text{cos}(q, c_j)
+$$
+
+This leverages the assumption that in narrative texts, adjacent chunks are often contextually related, unlike in more structured documents (eg. research papers) whose sections are more semantically isolated.
